@@ -1,0 +1,25 @@
+# emacs backup files
+*~
+
+# vim backup and temporary files
+*.orig
+.*.swp
+
+# ansible retry files
+*.retry
+
+# vagrant
+*.box
+.vagrant
+
+# action items
+todo.org
+
+# python compiled modules
+vagrant/provisioning/filter_plugins/__pycache__/urldecode.cpython-37.pyc
+
+# packer cache directory
+packer/packer_cache
+
+# IntelliJ
+.idea

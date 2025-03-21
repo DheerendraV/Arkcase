@@ -1,0 +1,10 @@
+---
+- hosts: all
+  roles:
+    - common
+    - arkcase-pre-upgrade
+    - arkcase-prerequisites
+    - arkcase-app
+    - arkcase-post-upgrade
+    - snowbound-app
+    - start-arkcase

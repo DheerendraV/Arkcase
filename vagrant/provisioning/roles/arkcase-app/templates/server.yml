@@ -1,0 +1,191 @@
+database:
+  platform: "org.eclipse.persistence.platform.database.{{ arkcase_db_platform }}"
+  #set this property to true if database platform is PostgreSQL
+  encryption_supported: "{{ (db_engine == 'postgresql') | ternary('true', 'false') }}"
+acm:
+  driverClassName: "{{ jdbc_driver_class_name }}"
+  url: "{{ jdbc_url_properties | replace('SCHEMA', (database_arkcase_schema)) }}"
+  password: "ENC({{ encrypted_default_database }})"
+##activiti engine database properties
+activiti.db.type: "{{ (db_engine == 'postgresql') | ternary('postgres', 'mysql') }}"
+elk:
+  server:
+    url: "https://{{ external_host }}/arkcase/acm-elastic"
+slk.server:
+  external.url: "https://{{ external_host }}/arkcase"
+frevvo:
+  service.external.baseUrl: "https://{{ external_host }}/arkcase"
+  browser.redirect.baseUrl: "https://{{ external_host }}/arkcase"
+  host: "{{ external_host }}"
+report:
+  plugin:
+    PENTAHO_SERVER_URL: "https://{{ external_host }}"
+    PENTAHO_SERVER_USER: "{{ arkcase_admin_user }}"
+    PENTAHO_SERVER_PASSWORD: "ENC({{ encrypted_admin_user_password }})"
+    PENTAHO_SERVER_INTERNAL_URL: "https://{{ pentaho_host }}"
+    PENTAHO_SERVER_INTERNAL_PORT: 2002
+solr:
+  host: "{{ solr_host }}"
+  port: 443
+fileEditingEnabled: {{ arkcase_ee | default('false') }}
+ecm:
+  viewer.snowbound: "https://{{ external_host }}/arkcase/VirtualViewerJavaHTML5/index.html?documentId=ecmFileId=$[fileId]%26acm_ticket=$[ticket]%26userid=$[userid]"
+  viewer.snowbound.encryptionKey: "{{ snowbound_symmetric_key }}"
+  viewer.snowbound.readonly:
+    url: "https://{{ external_host }}/arkcase/VirtualViewerJavaHTML5/index-read-only.html?documentId=ecmFileId=$[fileId]%26acm_ticket=$[ticket]%26userid=$[userid]"
+{% if ecm_viewer is defined %}
+  viewer: "{{ ecm_viewer | default('snowbound')}}"
+{% endif %}
+outlook.exchange.integration:
+  enabled: yes
+  system_user_email: "{{ email_service_account }}"
+  system_user_email_password: "ENC({{ encrypted_email_service_password }})"
+  system_user_id: "{{ email_service_account }}"
+################### Notification Plugin Configuration (notification.properties) ####################  
+notification:
+  arkcase.url: "https://{{ external_host }}"
+  arkcase.url.base: "https://{{ external_host }}/arkcase"
+onlyoffice.plugin:
+  #base url used for sending to onlyoffice to be able to perform callbacks
+  arkcase.baseurl: "https://{{ external_host }}/arkcase"
+kafka:
+ bootStrapServers: {{ kafka_host | default(internal_host) }}:{{ kafka_port | default(9092) }}
+wopi.plugin:
+  tenant:
+    domain: "{{ external_host }}"
+    port: 443
+application:
+  properties:
+    baseUrl: "https://{{ external_host }}/arkcase"
+    applicationName: "arkcase"
+    alfrescoUserIdLdapAttribute: "samAccountName"
+    issueCollectorFlag: false
+    logoutUrl: "/logout"
+alfresco:
+  admin:
+    baseurl: "https://{{ ((alfresco_host | trim) == "") | ternary("alfresco", alfresco_host) }}/alfresco/s/admin/admin-sync"
+    username: "admin"
+    password: "ENC({{ encrypted_default_alfresco }})"
+  sync:
+    host: "{{ alfresco_host }}"
+    port: 443
+    enabled: {{ enable_alfresco_sync | lower }}
+    username: admin
+    password: "ENC({{ encrypted_default_alfresco }})"
+################### Alfresco RMA Plugin Configuration (alfrescoRmaPlugin.properties) ####################
+alfresco_host: "{{ alfresco_host }}"
+alfresco_port: 443
+email:
+  should-delete-messages: false
+  should-mark-messages-as-read: true
+  #set some existing email here for testing 
+  sender:
+    type: "{{ email_sender_protocol }}"
+    encryption: "{{ email_sender_encryption }}"
+    allowAttachments: {{ email_allow_attachments | lower }}
+    allowDocuments: {{ email_allow_documents | lower }}
+    host: "{{ email_smtp_host }}"
+    allowHyperlinks: {{ email_allow_hyperlinks | lower }}
+    userFrom: "{{ email_user_from }}"
+    port: {{ email_sender_port|int }}
+    username: "{{ email_smtp_username }}"
+    password: "ENC({{ encrypted_email_smtp_password }})"
+    convertDocumentsToPdf: {{ email_convert_documents_to_pdf | lower }}
+    ################### Outlook email address for email ingestion - Mail Receiver ###################
+  #set some existing email here for testing
+  CASE_FILE.user: "{{ email_receiver_case_file_account_escaped | default('') }}"
+  CASE_FILE.password: "ENC({{ encrypted_email_receiver_case_file_password }})"
+  COMPLAINT.user: "{{ email_receiver_complaint_account_escaped | default('') }}"
+  COMPLAINT.password: "ENC({{ encrypted_email_receiver_complaint_password }})"
+  CONSULTATION.user: "{{ email_receiver_consultation_account_escaped | default('') }}"
+  CONSULTATION.password: "ENC({{ encrypted_email_receiver_consultation_password }})"
+  host: "{{ email_host_imap }}"
+  port: {{ email_port_imap|int }}
+  create:
+    case.enabled: {{ create_case_from_email_enabled | lower }}
+    complaint.enabled: {{ create_complaint_from_email_enabled | lower }}
+################### Azure AD OAuth Configuration ####################
+aad:
+  clientId: "{{ azure_ad_client_id | default('') }}"
+  clientSecret: "{{ azure_ad_client_secret | default('') }}"
+  tenantId: "{{ azure_ad_tenant_id | default('') }}"
+  enableModernAuthentication: "{{ enable_modern_authentication | default(false) }}"
+ocr:
+  tempPath: "{{ root_folder }}/tmp/arkcase/"
+ark.activemq:
+  #URL of the ActiveMQ broker.
+  transportConnectorURI: "ssl://{{ activemq_host }}:61616"
+acm.websockets:
+  stomp_broker_relay.relay_host: "{{ activemq_host }}"
+  stomp_broker_relay.keystore: "{{ java_key_store }}"
+  stomp_broker_relay.keystore_pass: "{{ java_key_store_pass }}"
+  stomp_broker_relay.truststore: "{{ java_trust_store }}"
+  stomp_broker_relay.truststore_pass: "ENC({{ encrypted_java_trust_store_pass }})"
+  stomp_broker_relay.client_login: "{{ activemq_user | default('guest', true) }}"
+  stomp_broker_relay.client_passcode: "ENC({{ encrypted_activemq_password }})"
+  #STOMP (ArkCase to ActiveMQ) authentication
+  stomp_broker_relay.system_login: "{{ activemq_user | default('guest', true) }}"
+  stomp_broker_relay.system_passcode: "ENC({{ encrypted_activemq_password }})"
+################### Calendar Configured Object Types (calendarConfiguredObjectTypes.properties) ####################
+calendar:
+  configuration: "{\"CASE_FILE\":{\"integrationEnabled\":{{ calendar_enabled_for_case_files | lower }},\"systemEmail\"\
+  :\"{{ email_service_account }}\",\"password\":\"ENC({{ encrypted_email_service_password }})\"\
+  ,\"purgeOptions\":\"{{ calendar_purge_option }}\",\"daysClosed\":null},\"COMPLAINT\":{\"\
+  integrationEnabled\":{{ calendar_enabled_for_complaints | lower }},\"systemEmail\":\"{{ email_service_account }}\",\"password\":\"ENC({{ encrypted_email_service_password }})\",\"purgeOptions\"\
+  :\"{{ calendar_purge_option }}\",\"daysClosed\":null}}"
+acm.hazelcast:
+  log.folder: "{{ root_folder }}/log/arkcase"
+
+################### AWS Credentials (aws/credentials.properties) ####################
+## AccessKeyId and SecretAccessKey must be encrypted. ##
+aws.credentials:
+  awsAccessKeyId: "ENC({{ encrypted_aws_access_key_id }})"
+  awsSecretAccessKey: "ENC({{ encrypted_aws_secret_access_key }})"
+
+zylabIntegration:
+  enabled: {{ zylab_integration_enabled | default(false) }}
+  host: "{{ zylab_server_host | default('') }}"
+  port: "{{ zylab_server_port | default('') }}"
+  defaultMatterTemplateId: "{{ zylab_default_mater_template_id | default('') }}"
+  authentication:
+    registrationId: "{{ zylab_registrationId | default('') }}"
+    clientId: "{{ zylab_clientId | default('') }}"
+    clientSecret: "{{ zylab_clientSecret | default('') }}"
+    tokenUri: "{{ zylab_tokenUri| default('') }}"
+    systemUserEmail: "{{ zylab_systemUserEmail | default('') }}"
+    systemUserPassword: "{{ zylab_systemUserPassword | default('') }}"
+payment:
+  enabled: {{ payment_enabled | default(false) }}
+  touchnet:
+    username: "{{ touchnet_username | default('') }}"
+    password: "{{ touchnet_password | default('') }}"
+    securelinkendpoint: "{{ touchnet_securelinkendpoint | default('') }}"
+    securepaylinkendpoint: "{{ touchnet_securepaylinkendpoint | default('') }}"
+    upaysiteid: "{{ touchnet_upaysiteid | default('') }}"
+microsoftOfficeOnline.isWopiEnabled: {{ arkcase_ee | default('false') }}
+
+#### Configuration variables for PDFTron integration ###########
+pdftron:
+  viewer:
+    license: "{{ pdftron_viewer_license | default('') }}"
+  audioVideo:
+    viewer:
+      license: "{{ pdftron_audio_video_viewer_license | default('') }}"
+
+############# File service configuration for s3/alfresco
+fileManagement:
+  fileRepositoryType: {{ file_repository_type | default("alfresco") }}
+  s3:
+    url: "http://{{ internal_host }}:9000"
+    region: {{ aws_s3_region | default("us-east-1") }}
+    accessKey: {{ s3_access_key | default("minioadmin") }}
+    secretKey: {{ s3_secret_key | default("minioadmin") }}
+    bucketName: {{ s3_bucket_name | default("arkcase") }}
+
+############# License Management
+licenseManagement:
+  licenseAboutToExpireMessage: "Your ArkCase License is set to expire in %d %s. Please reach out to your Account Manager to acquire a new license."
+  licenseStillNotActiveMessage: "Your ArkCase License will be valid soon. Please reach out to your Account Manager for more details."
+  licenseValidMessage:  "Your ArkCase License is valid."
+  licenseExpiredMessage:  "Your ArkCase License has expired. Please reach out to your Account Manager to acquire a new license."
+  userNotAdministrator: "User don't have permission to view message."

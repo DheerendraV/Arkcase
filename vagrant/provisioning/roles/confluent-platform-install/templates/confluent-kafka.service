@@ -1,0 +1,20 @@
+[Unit]
+Description=Apache Kafka - broker
+Documentation=http://docs.confluent.io/
+After=network.target confluent-zookeeper.target
+
+[Service]
+Type=simple
+User=cp-kafka
+Group=confluent
+Environment="LOG_DIR={{ root_folder }}/log/kafka"
+ExecStart=/usr/bin/kafka-server-start {{root_folder}}/app/kafka/server.properties
+ExecStop=/usr/bin/kafka-server-stop
+LimitNOFILE=1000000
+TimeoutStopSec=180
+Restart=no
+TimeoutStartSec=180
+ExecStartPost=/usr/bin/timeout 180 sh -c 'while ! ss -H -t -l -n sport = :{{ kafka_port | default(9092) }} | grep -q "{{ kafka_port | default(9092) }}"; do sleep 1; done'
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,32 @@
+{{ root_folder }}/log/snowbound/*.log {
+  copytruncate
+  daily
+  rotate 7
+  compress
+  missingok
+  size 10k
+  dateext
+  dateyesterday
+}
+
+{{ root_folder }}/log/snowbound/*.out {
+  copytruncate
+  daily
+  rotate 7
+  compress
+  missingok
+  size 10k
+  dateext
+  dateyesterday
+}
+
+{{ root_folder }}/log/snowbound/*.txt {
+  copytruncate
+  daily
+  rotate 7
+  compress
+  missingok
+  size 10k
+  dateext
+  dateyesterday
+}

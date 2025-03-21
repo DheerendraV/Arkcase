@@ -1,0 +1,26 @@
+- name: Expose solr app port
+  become: yes
+  firewalld:
+    port: "{{ solr_port }}/tcp"
+    permanent: true
+    zone: public
+    state: enabled
+  register: solr_port_fw
+  vars:
+    ansible_python_interpreter: "{{ ansible_python3 | default('/usr/bin/python2') }}"
+
+- name: Expose solr jmx port
+  become: yes
+  firewalld:
+    port: "50502/tcp"
+    permanent: true
+    zone: public
+    state: enabled
+  register: solr_jmx_port
+
+- name: Reload firewalld
+  become: yes
+  command: firewall-cmd --reload
+  when: solr_port_fw is changed or solr_jmx_port is changed
+  
+

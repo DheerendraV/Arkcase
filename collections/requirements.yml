@@ -1,0 +1,8 @@
+---
+collections:
+- community.general
+- community.crypto
+- community.mysql
+- community.mongodb
+- community.postgresql
+- amazon.aws

@@ -1,0 +1,49 @@
+{
+  "builders": [
+    {
+      "boot_command": [
+        "c  setparams 'kickstart' <enter> linuxefi /images/pxeboot/vmlinuz text inst.stage2=hd:LABEL=CentOS\\x207\\x20x\\86_64 inst.ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ks-hyper-v.cfg<enter> initrdefi /images/pxeboot/initrd.img<enter> boot<enter>"
+      ],
+      "boot_wait": "10s",
+      "cpus": 2,
+      "disk_size": 131072,
+      "enable_dynamic_memory": true,
+      "generation": 2,
+      "headless": true,
+      "http_directory": "http",
+      "iso_checksum": "sha256:07b94e6b1a0b0260b94c83d6bb76b26bf7a310dc78d7a9c7432809fb9bc6194a",
+      "iso_urls": [
+        "CentOS-7-x86_64-Minimal-2009.iso",
+        "http://mirror.vcu.edu/pub/gnu_linux/centos/7.9.2009/isos/x86_64/CentOS-7-x86_64-Minimal-2009.iso"
+      ],
+      "memory": 8192,
+      "shutdown_command": "echo 'vagrant'|sudo -S /sbin/halt -h -p",
+      "ssh_password": "vagrant",
+      "ssh_port": 22,
+      "ssh_timeout": "10000s",
+      "ssh_username": "root",
+      "switch_name": "ExternalSwitch",
+      "type": "hyperv-iso",
+      "vm_name": "arkcase-centos-7-x86_64"
+    }
+  ],
+  "post-processors": [
+    [
+      {
+        "output": "builds/{{.Provider}}-centos7-20191129.box",
+        "type": "vagrant"
+      }
+    ]
+  ],
+  "provisioners": [
+    {
+      "execute_command": "{{.Vars}} sudo -S -E bash '{{.Path}}'",
+      "script": "scripts/vagrant-setup.sh",
+      "type": "shell"
+    }
+  ],
+  "variables": {
+    "version": ""
+  }
+}
+

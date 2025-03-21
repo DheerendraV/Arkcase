@@ -1,0 +1,80 @@
+- name: spring-config-saml.properties file
+  become: yes
+  become_user: arkcase
+  template:
+    src: spring-config-saml.properties
+    dest: "{{ root_folder }}/data/arkcase-home/.arkcase/acm/spring/spring-config-saml.properties"
+    backup: yes
+
+- name: read current setenv.sh
+  become: yes
+  become_user: arkcase
+  command: cat {{ root_folder }}/app/arkcase/bin/setenv.sh
+  register: setenv_contents
+  changed_when: false
+
+- name: replace ssoSaml profile with externalSaml
+  become: yes
+  become_user: arkcase
+  replace:
+    backup: yes
+    path: "{{ root_folder }}/app/arkcase/bin/setenv.sh"
+    regexp: "ssoSaml"
+    replace: "externalSaml"
+  when: '"ssoSaml" in setenv_contents.stdout'
+
+- name: replace ldap profile with externalSaml
+  become: yes
+  become_user: arkcase
+  replace:
+    backup: yes
+    path: "{{ root_folder }}/app/arkcase/bin/setenv.sh"
+    regexp: "ldap"
+    replace: "externalSaml"
+  when: '"ldap" in setenv_contents.stdout'
+
+- name: ensure externalSaml is in the profile (other profiles already exist)
+  become: yes
+  become_user: arkcase
+  replace:
+    backup: yes
+    path: "{{ root_folder }}/app/arkcase/bin/setenv.sh"
+    regexp: "spring.profiles.active="
+    replace: "spring.profiles.active=externalSaml"
+  when: '"externalSaml" not in setenv_contents.stdout and "ldap" not in setenv_contents.stdout and "spring.profiles.active" in setenv_contents.stdout'
+
+- name: ensure externalSaml is in the profile (no other profiles already exist)
+  become: yes
+  become_user: arkcase
+  lineinfile:
+    backup: yes
+    path: "{{ root_folder }}/app/arkcase/bin/setenv.sh"
+    line: 'JAVA_OPTS="$JAVA_OPTS -Dspring.profiles.active=externalSaml"'
+  when: '"spring.profiles.active" not in setenv_contents.stdout'
+
+- name: update SAML spring properties
+  include_tasks: update-saml-spring-properties.yml
+  loop:
+    - spring-security-config-saml.xml
+    - spring-security-config-external-saml.xml
+  loop_control:
+    loop_var: saml_prop_file
+
+- name: configure logout URL for SAML
+  become: yes
+  become_user: arkcase
+  replace:
+    backup: yes
+    path: "{{ root_folder }}/data/arkcase-home/.arkcase/acm/acm-config-server-repo/arkcase-server.yaml"
+    regexp: 'logoutUrl: "/logout"'
+    replace: 'logoutUrl: "/saml/logout"'
+
+- name: import SAML federation host certificate
+  become: yes
+  java_cert:
+    cert_alias: "{{ saml_federation_host }}"
+    cert_port: 443
+    cert_url: "{{ saml_federation_host }}"
+    keystore_path: "{{ java_key_store }}"
+    keystore_pass: "{{ java_key_store_pass }}"
+    state: present

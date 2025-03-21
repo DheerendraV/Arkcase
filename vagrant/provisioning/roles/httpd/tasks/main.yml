@@ -1,0 +1,197 @@
+- name: install httpd
+  become: yes
+  yum:
+    state: present
+    name:
+      - httpd
+      - mod_ssl
+      - mod_ldap
+
+- name: httpd folders
+  become: yes
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: apache
+    group: apache
+    seuser: "system_u"
+    serole: "object_r"
+    setype: "httpd_log_t"
+    selevel: "s0"
+  loop:
+    - "{{ root_folder }}/log/httpd"
+    - "{{ root_folder }}/data/httpd"
+    - "{{ root_folder }}/data/httpd/htdocs"
+    - "{{ root_folder }}/tmp/httpd"
+    - "{{ root_folder }}/install/httpd"
+
+- name: copy private key for httpd
+  become: yes
+  copy:
+    remote_src: yes
+    src: "{{ ssl_key }}"
+    dest: "{{ root_folder }}/data/httpd/httpd.key"
+    owner: apache
+    group: apache
+    mode: 0600
+
+- name: ArkCase TLS configuration
+  become: yes
+  template:
+    backup: yes
+    src: httpd-ssl.conf
+    dest: /etc/httpd/conf.d/ssl.conf
+  register: tls_conf
+
+- name: Remove httpd to bind on port 80 
+  become: yes
+  lineinfile:
+    path: "/etc/httpd/conf/httpd.conf"
+    regexp: '(Listen 80)'
+    line: '# Listen 80'
+    state: present
+    backup: yes
+
+- name: FOIA context, if needed
+  become: yes
+  blockinfile:
+    backup: yes
+    marker: "# {mark} ANSIBLE MANAGED BLOCK FOIA CONTEXT"
+    insertbefore: "</VirtualHost>"
+    path: "/etc/httpd/conf.d/ssl.conf"
+    block: |
+      <Directory "{{ root_folder }}/data/httpd/htdocs/{{ foia_portal_context }}">
+        RewriteEngine On
+        RewriteBase "/{{ foia_portal_context }}/"
+        RewriteRule ^index\.html$ - [L]
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteCond %{REQUEST_FILENAME} !-d
+        RewriteRule . /{{ foia_portal_context }}/index.html [L]
+      </Directory>
+  when: foia_portal_context is defined
+
+- name: ArkCase index.html
+  become: yes
+  become_user: apache
+  template:
+    backup: yes
+    src: index.html
+    dest: "{{ root_folder }}/data/httpd/htdocs/index.html"
+
+- name: httpd logrotate
+  become: yes
+  template:
+    src: arkcase-httpd
+    dest: /etc/logrotate.d/arkcase-httpd
+
+- name: SHOWCASE context, if needed
+  become: yes
+  blockinfile:
+    backup: yes
+    marker: "# {mark} ANSIBLE MANAGED BLOCK SHOWCASE CONTEXT"
+    insertbefore: "</VirtualHost>"
+    path: "/etc/httpd/conf.d/ssl.conf"
+    block: |
+      <Directory "{{ root_folder }}/data/httpd/htdocs/{{ showcase_context }}">
+        RewriteEngine On
+        RewriteBase "/{{ showcase_context }}/"
+        RewriteRule ^index\.html$ - [L]
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteCond %{REQUEST_FILENAME} !-d
+        RewriteRule . /{{ showcase_context }}/index.html [L]
+      </Directory>
+  when: showcase_context is defined
+
+- name: ARKCASE PORTAL context, if needed
+  become: yes
+  blockinfile:
+    backup: yes
+    marker: "# {mark} ANSIBLE MANAGED BLOCK ARKCASE PORTAL CONTEXT"
+    insertbefore: "</VirtualHost>"
+    path: "/etc/httpd/conf.d/ssl.conf"
+    block: |
+      <Directory "{{ root_folder }}/data/httpd/htdocs/{{ arkcase_portal_context }}">
+        RewriteEngine On
+        RewriteBase "/{{ arkcase_portal_context }}/"
+        RewriteRule ^index\.html$ - [L]
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteCond %{REQUEST_FILENAME} !-d
+        RewriteRule . /{{ arkcase_portal_context }}/index.html [L]
+      </Directory>
+  when: arkcase_portal_context is defined
+
+- name: see if mod_security.conf exists, possibly from an earlier installation of httpd
+  become: yes
+  stat:
+    path: "/etc/httpd/conf.d/mod_security.conf"
+  register: mod_security_conf
+
+- name: update mod_security.conf if necessary
+  become: yes
+  replace:
+    backup: yes
+    path: "/etc/httpd/conf.d/mod_security.conf"
+    regexp: "{{ item.regexp }}"
+    replace: "{{ item.replace }}"
+  loop:
+    - regexp: "SecAuditLogParts ABIJDEFHZ"
+      replace: "SecAuditLogParts ABFZ"
+    - regexp: "/var/log/httpd"
+      replace: "{{ root_folder }}/log/httpd"
+  when: mod_security_conf.stat.exists
+  register: mod_security_conf_updated
+    
+- name: enable httpd to run at startup
+  become: yes
+  systemd:
+    daemon_reload: true
+    name: httpd
+    enabled: yes
+    masked: no
+
+- name: restart httpd if needed
+  become: yes
+  systemd:
+    name: httpd
+    state: restarted
+  when: tls_conf is changed or mod_security_conf_updated is changed
+
+- name: Check whether I am inside a Docker container
+  stat:
+    path: /.dockerenv
+  register: stat_dockerenv_result
+
+- name: check SELinux status
+  become: yes
+  command: sestatus
+  # NB: Don't use SELinux inside Docker
+  when: not stat_dockerenv_result.stat.exists
+  register: sestatus_results
+
+- name: see if httpd_can_network_connect is already enabled
+  command: /usr/sbin/getsebool httpd_can_network_connect
+  register: httpd_network_enabled
+  when: "not stat_dockerenv_result.stat.exists and 'disabled' not in sestatus_results.stdout"
+  changed_when: false
+
+- name: tell SELinux that httpd can proxy to other local services
+  become: yes
+  command: setsebool -P httpd_can_network_connect 1
+  when: "not stat_dockerenv_result.stat.exists and 'disabled' not in sestatus_results.stdout and httpd_network_enabled.stdout is search('off$')"
+
+- name: open firewall port
+  become: yes
+  firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  loop:
+    - "443/tcp"
+    - "8443/tcp"
+  when: enable_firewall is undefined or enable_firewall
+  vars:
+    ansible_python_interpreter: "{{ ansible_python3 | default('/usr/bin/python2') }}"
+
+
+

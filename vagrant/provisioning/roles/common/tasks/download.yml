@@ -1,0 +1,28 @@
+- name: Check if {{ item.name }} already downloaded
+  stat:
+    path: "{{ item.dest }}" 
+  register: already_downloaded
+
+- name: download {{ item.name }} if needed (no checksum)
+  become: yes
+  become_user: "{{ item.owner }}"
+  command: wget --read-timeout=1200 {{ item.url }} -O {{ item.dest }}
+  when: already_downloaded.stat.exists == False
+  register: item_downloaded
+
+- name: checksum downloaded file
+  become: yes
+  become_user: "{{ item.owner }}"
+  stat:
+    path: "{{ item.dest }}"
+  when: item.checksum is defined
+  register: item_checksum
+
+- name: output item info
+  debug:
+    msg: "{{ item_checksum }}"
+
+- name: fail if checksum doesn't match
+  fail:
+    msg: "Actual checksum {{ item_checksum.stat.checksum }} doesn't match expected checkum {{ item.checksum }}"
+  when: item.checksum is defined and item.checksum != 'sha1:' ~ item_checksum.stat.checksum

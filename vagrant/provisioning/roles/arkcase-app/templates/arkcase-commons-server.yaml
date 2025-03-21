@@ -1,0 +1,51 @@
+arkcase:
+  baseURL: "https://{{ external_host }}/arkcase"
+  basePortalURL: "https://{{ external_host }}/portal"
+  baseApplicationUrl:  "https://{{ external_host }}"
+  fileManagementURL: "{{ microservice_protocol | default('http') }}://{{ internal_host }}:{{ file_management_port | default(9068) }}"
+  fileUtilsURL: "{{ microservice_protocol | default('http') }}://{{ internal_host }}:{{ file_utils_port | default(9078) }}"
+  enableKafkaSync:
+    schema: {{ enableSchemaSync | default(false) }}
+    caseFile: {{ enableCaseFileSync | default(false) }}
+    complaint: {{ enableComplaintSync | default(false) }}
+    person: {{ enablePersonSync | default(false) }}
+    organization: {{ enableOrganizationSync | default(false) }}
+    file: {{ enableFileSync | default(false) }}
+  kafka:
+    configuration:
+      bootstrapAddress: {{ kafka_host }}:{{ kafka_port | default(9092) }}
+      schemaRegistryAddress: https://{{ schema_registry_host | default(kafka_host) }}/schema-registry
+    # this is for arkcase_version until/and 2022.01-RC1
+    bootstrapAddress: {{ kafka_host }}:{{ kafka_port | default(9092) }}
+    schemaRegistryAddress: https://{{ schema_registry_host | default(kafka_host) }}/schema-registry  
+  eureka:
+    defaultZone: https://{{ eureka_host | default(internal_host) }}/eureka
+  zipkin:
+    baseUrl: https://{{ zipkin_host | default(internal_host) }}/zipkin/api
+  configuration-server:
+    baseURL: https://{{ internal_host }}/config
+
+jodconverter:
+  local:
+    enabled: true
+    officeHome: /opt/app/arkcase/app/libreoffice
+
+arkcase.integrationUser.userId: "{{ arkcase_admin_user }}@{{ ldap_user_domain }}"
+
+recaptcha:
+  configuration:
+    secretKey: {{ secretKeyid_recaptcha | default('') }}
+    verifyUrl: "https://www.google.com/recaptcha/api/siteverify"
+
+sitemapGenerator:
+  enabled: {{ enableSitemapGenerator | default(false) }}
+  #  Sets the JAXB output to be 'prettified', for ease. This will make the files larger.
+  formattedOutput: {{ formattedSitemapOutput | default(false) }}
+  # Whether the Filing/Docket Sitemaps should be gzipped after creation.
+  compressSiteMaps: {{ compressSiteMaps | default(true) }}
+  s3:
+    url: '{{ sitemap_s3_url | default(file_management_s3_url) }}'
+    region: '{{ sitemap_s3_region | default("us-east-1") }}'
+    accessKey: '{{ sitemap_s3_access_key | default("minioadmin") }}'
+    secretKey: '{{ sitemap_s3_secret_key | default("minioadmin") }}'
+    bucketName: '{{ sitemap_s3_bucket_name | default("sitemaps") }}'

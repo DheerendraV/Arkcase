@@ -1,0 +1,279 @@
+###################################################
+# Get the analytical reports project and unzip it
+###################################################
+
+- name: Set reports version formatted
+  ansible.builtin.set_fact:
+    foia_analytical_reports_version_formatted: "{{ '-' ~ foia_analytical_reports_version if foia_analytical_reports_version != '' else '' }}"
+
+- name: Create install folder
+  become: true
+  become_user: pentaho
+  ansible.builtin.file:
+    path: "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}"
+    mode: '0755'
+    state: directory
+
+- name: Download FOIA analytical reports repository
+  become: true
+  become_user: pentaho
+  ansible.builtin.command: sshpass -e sftp -o StrictHostKeyChecking\=no -o UserKnownHostsFile\=/dev/null {{ sftp_arkcase_user }}@{{ sftp_service_base_url }}:{{ sftp_arkcase_folder }}/{{ item }}
+  args:
+    chdir: "{{ root_folder }}/install/pentaho"
+  environment:
+    SSHPASS: "{{ sftp_arkcase_password }}"
+  loop:
+    - foia-reports-dw{{ foia_analytical_reports_version_formatted }}.zip
+
+- name: Unzip repository
+  become: true
+  become_user: pentaho
+  ansible.builtin.unarchive:
+    remote_src: true
+    src: "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}.zip"
+    dest: "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}"
+
+- name: Mondrian schema fixes
+  become: true
+  become_user: pentaho
+  ansible.builtin.replace:
+    backup: true
+    path: "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/mondrian_schema/foiaSchema1.4.xml"
+    regexp: 'Cube name="FOIA Cube" visible="true"'
+    replace: 'Cube name="FOIA Cube 1.4" visible="true"'
+
+##########################################################
+# Configure the Kettle job files and run the Kettle job.
+# This will create and populate the data warehouse tables.
+##########################################################
+
+- name: Get the encrypted password for the kettle job
+  become: true
+  become_user: pentaho-pdi
+  ansible.builtin.shell: "set -o pipefail && {{ root_folder }}/app/pentaho-pdi/data-integration/encr.sh -kettle '{{ rds_password | default(default_database_password) }}' | grep Encrypted"
+  register: encr_password
+  changed_when: false
+
+- name: Get the encrypted password for the cache clean jobs
+  become: true
+  become_user: pentaho-pdi
+  ansible.builtin.shell: "set -o pipefail && {{ root_folder }}/app/pentaho-pdi/data-integration/encr.sh -kettle '{{ arkcase_admin_password }}' | grep Encrypted"
+  register: arkcase_admin_encr_password
+  changed_when: false
+
+- name: Ensure shared database connection folder exists
+  become: true
+  become_user: pentaho-pdi
+  ansible.builtin.file:
+    path: /home/pentaho-pdi/.kettle
+    mode: '0755'
+    state: directory
+
+- name: Write shared database connection file
+  become: true
+  become_user: pentaho-pdi
+  ansible.builtin.template:
+    backup: true
+    mode: '0644'
+    src: shared.xml
+    dest: /home/pentaho-pdi/.kettle/shared.xml
+
+- name: Ensure the job has no internal schedule (should be unscheduled)
+  become: true
+  become_user: pentaho
+  ansible.builtin.lineinfile:
+    backup: true
+    path: "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/foia-dw1.kjb"
+    backrefs: true
+    regexp: "<repeat>Y</repeat>"
+    line: "      <repeat>N</repeat>"
+
+- name: Setup path to arkcase config file(Windows)
+  become: true
+  become_user: pentaho
+  ansible.builtin.lineinfile:
+    path: "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/misc/VARIABLE_CONFIG.ktr"
+    state: present
+    backrefs: true
+    regexp: '^(\s*)<name>C:\\Users\\marjan\.stefanoski\\foia---reports-dw-1\\config\\arkcase_config.properties</name>'
+    line: '\1<name>{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/config/arkcase_config.properties</name>'
+
+- name: Setup path to arkcase config file(Linux)
+  become: true
+  become_user: pentaho
+  ansible.builtin.lineinfile:
+    path: "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/misc/VARIABLE_CONFIG.ktr"
+    state: present
+    backrefs: true
+    regexp: '^(\s*)(.*)<name>/home/marst/projects/ETL-projects/(.*)$'
+    line: '\1<name>{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/config/arkcase_config.properties</name>'
+
+- name: Find project files
+  become: true
+  become_user: pentaho
+  ansible.builtin.find:
+    paths:
+      - "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}"
+      - "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/dimensions"
+      - "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/stages"
+      - "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/reports"
+      - "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/misc"
+    file_type: file
+    recurse: false
+    excludes:
+      - "*~"
+      - "*.zip"
+  register: foia_dw_files
+
+- name: Update database configurations
+  ansible.builtin.include_tasks: update_db_config.yml
+  loop: "{{ foia_dw_files.files | map(attribute='path') | list }}"
+  loop_control:
+    loop_var: f
+
+- name: Update pentaho URLs to clear report cache
+  become: true
+  become_user: pentaho
+  ansible.builtin.lineinfile:
+    backup: true
+    backrefs: true
+    path: "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/misc/FOIA_CDA_CLEAR_CACHE.ktr"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - regexp: "<nullif>http{{ ':' }}//localhost{{ ':' }}8080/pentaho/plugin/cda/api/clearCache</nullif>"
+      line: "<nullif>https://{{ internal_host }}:2002/pentaho/plugin/cda/api/clearCache</nullif>"
+    - regexp: "<httpLogin>242.matthew.maines</httpLogin>"
+      line: "  <httpLogin>{{ arkcase_admin_user }}</httpLogin>"
+    - regexp: "<httpPassword>Encrypted 2be98afc81ac2978aac22ab798bb3aac0</httpPassword>"
+      line: "  <httpPassword>{{ arkcase_admin_encr_password.stdout }}</httpPassword>"
+
+- name: Update pentaho URLs to clear Mondrian cache
+  become: true
+  become_user: pentaho
+  ansible.builtin.lineinfile:
+    backup: true
+    backrefs: true
+    path: "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/misc/FOIA_MONDRIAN_CLEAR_CACHE.ktr"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - regexp: "<nullif>http{{ ':' }}//localhost{{ ':' }}8080/pentaho/api/system/refresh/mondrianSchemaCache</nullif>"
+      line: "<nullif>https://{{ internal_host }}:2002/pentaho/api/system/refresh/mondrianSchemaCache</nullif>"
+    - regexp: "<httpLogin>242.matthew.maines</httpLogin>"
+      line: "  <httpLogin>{{ arkcase_admin_user }}</httpLogin>"
+    - regexp: "<httpPassword>Encrypted 2be98afc81ac2978aac22ab798bb3aac0</httpPassword>"
+      line: "  <httpPassword>{{ arkcase_admin_encr_password.stdout }}</httpPassword>"
+
+- name: Setup Arkcase REST endpoints
+  become: true
+  become_user: pentaho
+  ansible.builtin.lineinfile:
+    backup: true
+    backrefs: true
+    path: "{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/config/arkcase_config.properties"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - regexp: "AGENCY_REST_ENDPOINT=https{{ ':' }}//acm-arkcase/arkcase/api/latest/service/config/lookups"
+      line: "AGENCY_REST_ENDPOINT=https://{{ external_host }}/arkcase/api/latest/service/config/lookups"
+    - regexp: "ARKCASE_USER=arkcase-admin@arkcase.org"
+      line: "ARKCASE_USER={{ arkcase_admin_user }}@{{ ldap_user_domain }}"
+    - regexp: "ARKCASE_PASS=AcMd3v\\$"
+      line: "ARKCASE_PASS={{ arkcase_admin_password }}"
+    - regexp: "TRUSTSTORE_PATH=/some/path/to/truststore"
+      line: "TRUSTSTORE_PATH={{ java_trust_store }}"
+    - regexp: "TRUSTSTORE_PASSWORD=password"
+      line: "TRUSTSTORE_PASSWORD={{ java_trust_store_pass }}"
+
+- name: Setup arkcase admin user in stg_foia_organization.ktr
+  become: true
+  become_user: pentaho
+  ansible.builtin.shell: sed -i 's~<nullif>arkcase-admin@arkcase.org</nullif>~<nullif>{{ arkcase_admin_user }}@{{ ldap_user_domain }}</nullif>~g' {{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/stages/STG_FOIA_ORGANIZATION.ktr
+
+- name: Setup arkcase admin user in stg_foia_organization_consultation.ktr
+  become: true
+  become_user: pentaho
+  ansible.builtin.shell: sed -i 's~<nullif>arkcase-admin@arkcase.org</nullif>~<nullif>{{ arkcase_admin_user }}@{{ ldap_user_domain }}</nullif>~g' {{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/stages/STG_FOIA_ORGANIZATION_CONSULTATION.ktr
+
+- name: Run the job to create and populate the mondrian cubes
+  become: true
+  become_user: pentaho-pdi
+  ansible.builtin.command:
+    cmd: ./kitchen.sh -file://{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/foia-dw1.kjb
+    chdir: "{{ root_folder }}/app/pentaho-pdi/data-integration"
+
+- name: Set the cron environment so as to be able to run the job
+  become: true
+  become_user: pentaho-pdi
+  ansible.builtin.cron:
+    env: true
+    name: "{{ item.name }}"
+    job: "{{ item.value }}"
+  loop:
+    - name: PATH
+      value: "/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/pentaho-pdi/.local/bin:/home/pentaho-pdi/bin"
+    - name: SHELL
+      value: /bin/bash
+
+- name: Schedule the job to run every day at 2 AM
+  become: true
+  become_user: pentaho-pdi
+  ansible.builtin.cron:
+    backup: true
+    name: "populate FOIA data warehouse tables"
+    job: "{{ root_folder }}/app/pentaho-pdi/data-integration/kitchen.sh -file://{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/foia-dw1.kjb"
+    month: "*"
+    weekday: "*"
+    day: "*"
+    hour: "2"
+    minute: "0"
+    disabled: false
+    state: present
+
+###################################################
+# Create the JDBC and the Mondrian data sources
+###################################################
+
+- name: List the data sources that already exist
+  become: true
+  become_user: pentaho
+  ansible.builtin.command:
+    cmd: 'wget --no-check-certificate -O {{ root_folder }}/install/pentaho/datasources-list.json --user={{ arkcase_admin_user }} --password "{{ arkcase_admin_password }}" https://{{ internal_host }}:2002/pentaho/plugin/data-access/api/datasource/jdbc/connection'
+  changed_when: false
+
+- name: Read the list of data sources
+  become: true
+  become_user: pentaho
+  ansible.builtin.command: cat {{ root_folder }}/install/pentaho/datasources-list.json
+  register: data_source_list
+  changed_when: false
+
+- name: File to post to Pentaho to create the data source
+  become: true
+  become_user: pentaho
+  ansible.builtin.template:
+    src: put_connection.json
+    dest: "{{ root_folder }}/install/pentaho/put_connection.json"
+    mode: '0644'
+  when: not '"MariaDB Local"' in data_source_list.stdout
+
+# the ansible uri module causes a timeout for some reason but wget works fine
+- name: Create the ArkCase JDBC data source for analytical reports
+  ansible.builtin.command:
+    cmd: 'wget --no-check-certificate --user={{ arkcase_admin_user }} --password "{{ arkcase_admin_password }}" --post-file {{ root_folder }}/install/pentaho/put_connection.json --header="Content-Type: application/json" https://{{ internal_host }}:2002/pentaho/plugin/data-access/api/connection/add'
+  register: create_datasource_rest_call
+  when: not '"MariaDB Local"' in data_source_list.stdout
+
+- name: Upload the Mondrian schema
+  become: true
+  become_user: pentaho
+  ansible.builtin.command:
+    cmd: 'curl -k -v -H "Content-Type: multipart/form-data" -X PUT -F uploadInput=@{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/mondrian_schema/{{ foia_mondrian_schema_file }} -F overwrite=true -F xmlaEnabledFlag=false -F parameters="Datasource=MariaDB Local" -u {{ arkcase_admin_user }}:{{ arkcase_admin_password }} https://{{ internal_host }}:2002/pentaho/plugin/data-access/api/datasource/analysis/catalog/{{ foia_mondrian_schema_file | replace(".xml", "") }}'
+
+#########################################################
+# Deploy the reports
+#########################################################
+
+- name: Import reports from the zip file archive
+  ansible.builtin.command: "{{ root_folder }}/app/pentaho/pentaho-server/import-export.sh --import --url=https://{{ internal_host }}:2002/pentaho --username={{ arkcase_admin_user }} --password='{{ arkcase_admin_password }}' --charset=UTF-8 --path=/public --file-path='{{ root_folder }}/install/pentaho/foia-reports-dw{{ foia_analytical_reports_version_formatted }}/reports/foia.zip' --permission=true --overwrite=true --retainOwnership=true"

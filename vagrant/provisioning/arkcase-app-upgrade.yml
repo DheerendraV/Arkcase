@@ -1,0 +1,30 @@
+---
+- hosts: all
+  roles:
+    - role: common
+      tags: [core]
+    - role: arkcase-pre-upgrade
+      tags: [core]
+    - role: arkcase-prerequisites
+      tags: [core]
+    - role: arkcase-app
+      tags: [core]
+    - role: foia
+      tags: [foia]
+    - role: saml-config
+      tags: [saml-config]
+    - role: oidc-config
+      tags: [oidc-config]
+    - role: start-arkcase
+      tags: [core]
+    - role: arkcase-interactive-reports
+      tags: [core]
+    - role: foia-analytical-reports
+      when: foia_analytical_reports_version is defined
+      tags: [foia]
+    - role: privacy
+      tags: [privacy]
+    - role: arkcase-post-upgrade
+      tags: [core]
+    - role: snowbound-app
+      tags: [core]
